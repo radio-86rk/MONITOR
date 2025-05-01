@@ -1937,7 +1937,7 @@ cursor_pos:				;  текущее положение курсора [out_char]
 	ds	2
 out_char_charset:			;  код дл€ переключени€ знакогенератора [out_char]
 	ds	1
-out_char_param:				;  рабочае €чейка ESC+Y [out_char]
+out_char_param:				;  рабоча€ €чейка ESC+Y [out_char]
 	ds	1
 out_char_8bit_mode:			;  8-битный режим дл€ вывода символа [out_char]
 	ds	1
