@@ -100,7 +100,7 @@ CURSOR_VIEW_INITIAL	EQU	10h
 
 ;  константа чтени€ с магнитофона
 TAPE_READ_CONST		EQU	2Ah
-;  константа чтени€ записи на магнитофон
+;  константа записи на магнитофон
 TAPE_WRITE_CONST	EQU	1Dh
 ;  синхробайт дл€ чтени€ с магнитофона
 TAPE_SYNC_BYTE		EQU	0E6h
@@ -1009,9 +1009,10 @@ out_char_c:
 	lhld	cursor_addr
 	lda	out_char_esc_phase
 	dcr	a
-	jm	out_char_no_esc
-	jz	out_char_esc1
-	jpo	out_char_esc2
+	jm	out_char_no_esc			;  out_char_esc_phase == 0
+	jz	out_char_esc1			;  out_char_esc_phase == 1
+	jpo	out_char_esc2			;  out_char_esc_phase == 2
+	;  out_char_esc_phase == 3
 	;  обработка 3-го байта в ESC последовательности
 	;  передаетс€ смещение курсора по горизонтали X + 20h					
 	mov	a, c
@@ -1024,6 +1025,7 @@ out_char_esc3_loop:
 	call	out_char_code_right
 	pop	b
 	jmp	out_char_esc3_loop
+
 out_char_reset_and_exit:
 	xra	a
 out_char_exit:
@@ -1093,7 +1095,8 @@ out_char_code_lf:
 	lxi	h, SCREEN_VIDEO
 	lxi	d, SCREEN_VIDEO + SCR_SIZE_X
 	lxi	b, SCR_SIZE_X * SCR_VIDEO_SIZE_Y
-out_char_code_scroll:
+
+out_char_code_scroll_loop:
 	ldax	d
 	mov	m, a
 	inx	h
@@ -1101,7 +1104,7 @@ out_char_code_scroll:
 	dcx	b
 	mov	a, c
 	ora	b
-	jnz	out_char_code_scroll
+	jnz	out_char_code_scroll_loop
 	pop	d
 	pop	h
 	ret

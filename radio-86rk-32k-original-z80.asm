@@ -1,27 +1,18 @@
 ;  #################################################################################################
-;  ##  УПРАВЛЯЮЩАЯ ПРОГРАММА "МОНИТОР" ДЛЯ КОМПЬЮТЕРА "РАДИО-86РК/Nova"                           ##
+;  ##  УПРАВЛЯЮЩАЯ ПРОГРАММА "МОНИТОР" ДЛЯ КОМПЬЮТЕРА "РАДИО-86РК" 32 килобайта                   ##
 ;  #################################################################################################
 ;
 ;  Authors: Дмитрий Горшков, Геннадий Зеленко, Юрий Озеров, Сергей Попов,
-;           дизассемблирование и доработка Vitaliy Poedinok aka Vital72
-;  License: MIT
+;           дизассемблирование и комментарии Vitaliy Poedinok aka Vital72
 ;  www:     http://www.86rk.ru/
 ;  e-mail:  vital72@86rk.ru
-;  Version: 1.0
 ;  =================================================================================================
-;  Данная версия МОНИТОРа является доработкой авторской версии для компьютера "РАДИО-86РК/Nova".
-;  Для получения дополнительного пространства часть кода подверглась оптимизации без потери
-;  функциональности. Оставлены "как есть", без оптимизации, подпрограммы:
-;      out_char_c -- вывод символа на экран (рег. C),
-;      in_char    -- ввод символа с клавиатуры (блок),
-;      kbd_state  -- состояние клавиатуры,
-;      in_key     -- код нажатой клавиши (не блок).
-;  Также, сохранены все адреса внутренних подпрограмм для совместимости с пользовательскими
-;  программами, которые в обход договорённостям используют недокументированные вызовы.
+;  Это авторская версия МОНИТОРА для компьютера "РАДИО-86РК", коды которого печатались в журнале
+;  Радио №8 за 1986г. с.23, адаптированная для ОЗУ 32кб.
+;  Версия адаптированная под процессор Z80. Адаптация заключается в исключении перехода по биту
+;  чётности в подпрограмме вывода символа на экран при обработке "ESC+Y" последовательности.
+;  Настройка контроллера дисплея ВГ75 производится под VGA монитор с пикселклоком 25,175 МГц.
 ;  =================================================================================================
-
-;  конфигурация компьютера
-CFG_ELEKTRONIKA_KR02	EQU	1	;  признак использования клавиатуры МС7007
 
 MONITOR_BASE		EQU	0F800h	;  стартовый адрес МОНИТОРа
 MONITOR_EXTENSION	EQU	0F000h	;  стартовый адрес расширения МОНИТОРа
@@ -31,12 +22,9 @@ MONITOR_WARM_START	EQU	0F86Ch	;  горячий старт/консоль
 
 ;  базовые адреса микросхем периферии
 ADDR_KBD		EQU	08000h
-ADDR_TIMER		EQU	09000h
 ADDR_PORT		EQU	0A000h
-ADDR_RTC		EQU	0B000h
 ADDR_CRT		EQU	0C000h
 ADDR_DMA		EQU	0E000h
-ADDR_FONT_RAM		EQU	0F800h
 
 ADDR_KBD_PA		EQU	ADDR_KBD + 0
 ADDR_KBD_PB		EQU	ADDR_KBD + 1
@@ -50,8 +38,6 @@ ADDR_PORT_CTRL		EQU	ADDR_PORT + 3
 
 ADDR_CRT_PARAM		EQU	ADDR_CRT
 ADDR_CRT_CTRL		EQU	ADDR_CRT + 1
-
-ADDR_TIMER_CTRL		EQU	ADDR_TIMER + 3
 
 ;  флаги управляющих клавиш клавиатуры
 KBD_RUS_FLAG		EQU	80h
@@ -96,21 +82,20 @@ CHAR_CODE_ENTER		EQU	0Dh
 CHAR_CODE_ESC		EQU	1Bh
 CHAR_CODE_CTRL_C	EQU	03h
 
-;  параметры настройки контроллера CRT
-CRT_PIXEL_CLOCK		EQU	8000	;  kHz
-CRT_CHAR_WIDTH		EQU	6	;  ширина символа, пикселы
-CRT_HORIZ_TIME		EQU	64	;  длительность строки, мкс
+;  параметры настройки контроллера CRT для VGA монитора
+CRT_PIXEL_CLOCK		EQU	25175	;  kHz
+CRT_CHAR_WIDTH		EQU	8	;  pix
+CRT_HORIZ_CLOCK		EQU	31500	;  line frequency, kHz
 CRT_SPACED_ROWS		EQU	0	;  spaced row [0, 1]
-CRT_VERT_ROW_COUNT	EQU	1	;  vertical retrace row count [1, 2, 3, 4]
-CRT_UNDERLINE		EQU	10	;  underline placement [1..16]
-CRT_LINES_PER_ROW	EQU	10	;  number of lines per character row [1..16]
+CRT_VERT_ROW_COUNT	EQU	2	;  vertical retrace row count [1, 2, 3, 4]
+CRT_UNDERLINE		EQU	15	;  underline placement [1..16]
+CRT_LINES_PER_ROW	EQU	16	;  number of lines per character row [1..16]
 CRT_LINE_OFFSET		EQU	1	;  line counter mode [0, 1]
 CRT_NON_TRANSP_ATTR	EQU	1	;  field attribute mode [0, 1]
 CRT_HORIZONTAL_COUNT	EQU	8	;  horizontal retrace count [2, 4, 6, .. 32]
 CRT_BURST_SPACE_CODE	EQU	1	;  [0..7]
 CRT_BURST_COUNT_CODE	EQU	3	;  [0..3]
-CRT_ZZZZ6		EQU	((CRT_HORIZ_TIME * 8 / 6 - SCR_SIZE_X + 1) >> 1) - 1
-CRT_ZZZZ8		EQU	((CRT_HORIZ_TIME * 10 / 8 - SCR_SIZE_X + 1) >> 1) - 1
+CRT_ZZZZ		EQU	((1000 * CRT_PIXEL_CLOCK / CRT_HORIZ_CLOCK / CRT_CHAR_WIDTH - SCR_SIZE_X + 1) >> 1) - 1
 
 ;
 INP_BUFFER_SIZE		EQU	32
@@ -132,18 +117,6 @@ KBD_BELL_DELAY		EQU	50h
 KBD_BELL_COUNT		EQU	03h
 ;  адрес перехода по команде RST 6
 RST_6_ADDR		EQU	30h
-
-;  битовые маски байта конфигурации config_rk
-CFG_RK_FONT_RAM		EQU	00000001b
-CFG_RK_FONT_8BIT	EQU	00000100b
-
-.macro inp
-	in	((%%1) >> 8) | ((%%1) & 0FFh)
-.endm
-
-.macro outp
-	out	((%%1) >> 8) | ((%%1) & 0FFh)
-.endm
 
 ;  =================================================================================================
 ;  ====================================================================================  МОНИТОР  ==
@@ -169,42 +142,32 @@ CFG_RK_FONT_8BIT	EQU	00000100b
 	jmp	get_ram_top		;  30  //  получение верхней границы памяти
 	jmp	set_ram_top		;  33  //  установка верхней границы памяти
 
-;  СИНХРОНИЗАЦИЯ С КАДРОВЫМ СИНХРОИМПУЛЬСОМ  _______________________________________________________
-wait_sync:
-	lda	ADDR_CRT_CTRL		;  сброс регистра флагов
-	lda	ADDR_CRT_CTRL		;  чтение слова состояния
-	ani	20h			;  нужен флаг IR - запрос прерывания
-	jz	$-5			;  ждём установленного IR
-	ret
-
-	jmp	set_charset		;  42  //  выбор знакогенератора
-	lda	config_rk		;  45  //  чтение конфигурации
-	ret
-
 cold_start:
+	mvi	a, 10001010b
+	sta	ADDR_KBD_CTRL
 	lxi	sp, SCREEN - 1
-	;  все три канала таймера в режим 3
-	lxi	h, ADDR_TIMER_CTRL
-	mvi	m, 00110110b
-	mvi	m, 01110110b
-	mvi	m, 10110110b
+	call	init_video
+	;  очистка рабочих ячеек МОНИТОРА
+	lxi	h, MONITOR_DATA
+	lxi	d, MONITOR_DATA_END - 1
+	mvi	c, 0
+	call	directive_F
 	;
-	call	init_monitor
-	;
+	lxi	h, SCREEN - 1
+	shld	SP_storage
+	lxi	h, title_str
+	call	out_str
+	call	init_video
 	lxi	h, MONITOR_DATA - 1
 	shld	ram_top
-	;
 	lxi	h, (TAPE_WRITE_CONST << 8) | TAPE_READ_CONST
 	shld	tape_consts
 	;  код команды JMP для директивы G
 	mvi	a, 0C3h
 	sta	jump_to_go
-	sta	extended_directive_handler
-	;  pad
-	ds	MONITOR_WARM_START - $, 0
 
 warm_start:
-	;  т.н. теплый старт МОНИТОРа.
+	;  т.н. теплый старт МОНИТОРА.
 	.if $ - MONITOR_WARM_START
 	.error MONITOR_WARM_START
 	.endif
@@ -212,14 +175,14 @@ warm_start:
 	lxi	sp, SCREEN - 1
 	lxi	h, prompt_str
 	call	out_str			;  после выхода из п/п в A будет 0
-	call	set_charset
-	call	get_str			;  после выхода из п/п в B будет 0
-	mov	c, b
+	sta	ADDR_KBD_PC
+	dcr	a
+	sta	ADDR_PORT_PC
+	call	get_str
 	lxi	h, warm_start
 	push	h
 	lxi	h, inp_buffer
 	mov	a, m			;  первый символ введённой строки
-	call	check_run_sd_card
 	cpi	'X'
 	jz	directive_X
 	cpi	'U'
@@ -255,7 +218,7 @@ warm_start:
 	jz	directive_L
 	cpi	'R'
 	jz	directive_R
-	jmp	extended_directive_handler
+	jmp	MONITOR_EXTENSION
 
 get_str_back:
 	mvi	a, low (inp_buffer)
@@ -269,10 +232,10 @@ get_str_back:
 	jmp	get_str_loop
 
 ;  ВВОД СТРОКИ СИМВОЛОВ ВО ВНУТРЕННИЙ БУФЕР  _______________________________________________________
-;  Ввод с клавиатуры во внутренний буфер МОНИТОРа, размер ограничен в 31 символ
+;  Ввод с клавиатуры во внутренний буфер МОНИТОРА, размер ограничен в 31 символ
 ;  Особо обрабатываемые клавиши:
 ;      [<-] и [ЗБ] - удаление последнего символа
-;              [.] - Выход на тёплый старт МОНИТОРа
+;              [.] - выход на тёплый старт МОНИТОРА
 ;             [ВК] - возврат
 get_str:
 	lxi	h, inp_buffer
@@ -284,7 +247,7 @@ get_str_loop:
 	jz	get_str_back
 	cpi	CHAR_CODE_BACKSPACE
 	jz	get_str_back
-	call	out_char_a
+	cnz	out_char_a
 	mov	m, a
 	cpi	CHAR_CODE_CR
 	jz	get_str_cr
@@ -315,82 +278,65 @@ out_str:
 
 ;  PARSE PARAMS  ___________________________________________________________________________________
 parse_params:
+	lxi	h, in_param1		;  обнуление переменных in_param1,
+	lxi	d, in_param1 + 2 * 3	;  in_param2, in_param3 и in_param2_present
+	mvi	c, 0			;
+	call	directive_F		;
 	lxi	d, inp_buffer + 1
 	call	str2hex
-	cmc
-	sbb	a
-	cmc
-	sta	in_param2_present	;  признак наличия второго параметра
 	shld	in_param1
-	cnc	str2hex
 	shld	in_param2
-	lxi	h, 0
-	cnc	str2hex
+	rc
+	mvi	a, 0FFh			;  признак наличия второго параметра
+	sta	in_param2_present
+	call	str2hex
+	shld	in_param2
+	rc
+	call	str2hex
 	shld	in_param3
-	jnc	out_error_txt
-	ret
+	rc
+	jmp	out_error_txt
 
-;  _________________________________________________________________________________________________
-check_run_sd_card:
-	cpi	'-'
-	rnz
-	push	b
-	mov	l, b
-	mov	h, b
-	lxi	d, 007Fh
-	jmp	directive_R
-	
 ;  ПРЕОБРАЗОВАНИЕ HEX-СТРОКИ В ЧИСЛО  ______________________________________________________________
 ;  Вход:  DE - адрес строки
 ;  Выход: HL - результат
 str2hex:
-	xra	a
-	mov	h, a
+	lxi	h, 0
 str2hex_loop:
-	mov	l, a
 	ldax	d
 	inx	d
 	cpi	CHAR_CODE_CR
-	stc
-	rz
+	jz	str2hex_cr
 	cpi	','
 	rz
 	cpi	' '
 	jz	str2hex_loop
-	lxi	b, out_error_txt
-	push	b
 	sui	'0'
-	rm
+	jm	out_error_txt
 	cpi	10
 	jm	str2hex_add
 	cpi	'A' - '0'
-	rm
+	jm	out_error_txt
 	cpi	'F' - '0' + 1
-	rp
+	jp	out_error_txt
 	sui	'A' - '9' - 1
 str2hex_add:
-	pop	b
+	mov	c, a
 	dad	h
 	dad	h
 	dad	h
 	dad	h
-	;  для получения дополнительного места в ПЗУ тут была убрана
-	;  проверка на переполнение. большого смысла эта проверка всё равно
-	;  не имеет, т.к. нет проверок на переполнение в сложениях выше
-	ora	l
+	jc	out_error_txt
+	dad	b
 	jmp	str2hex_loop
-
-set_cursor_view:
-	mvi	a, CURSOR_VIEW_INITIAL
-	sta	cursor_view
-	jmp	out_title
+str2hex_cr:
+	stc
+	ret
 
 ;  СРАВНЕНИЕ ДВУХ 16-РАЗРЯДНЫХ ЧИСЕЛ  ______________________________________________________________
 ;  Вход:  HL - первое слово
 ;         DE - второе слово
-;  Выход: флаг ZF = 1: DE == HL
-;         флаг ZF = 0 и CF = 1: DE > HL
-;         флаг ZF = 0 и CF = 0: DE < HL
+;  Выход: флаг Z = 1: DE == HL
 cmp_hl_de:
 	mov	a, h
 	cmp	d
@@ -404,12 +350,12 @@ cmp_and_check_ctrl_c:
 	call	check_ctrl_c
 cmp_hl_de_loop:
 	call	cmp_hl_de
-	jz	exit_from_loop
-	inx	h
-	ret
+	jnz	$+6
 exit_from_loop:
 	inx	sp
 	inx	sp
+	ret
+	inx	h
 	ret
 
 check_ctrl_c:
@@ -677,15 +623,7 @@ init_video:
 	;                11 - немерцающее подчеркивание
 	;         ZZZZ - число знаков при обратном ходе строчной
 	;                развертки (2, 4, 6, ..., 32): (3 + 1) * 2 = 8
-	inp	ADDR_KBD_PC
-	ani	CFG_RK_FONT_8BIT
-	mvi	l, CRT_ZZZZ6 | (CRT_LINE_OFFSET << 7) | (CRT_NON_TRANSP_ATTR << 6)
-	jz	$+5
-	mvi	l, CRT_ZZZZ8 | (CRT_LINE_OFFSET << 7) | (CRT_NON_TRANSP_ATTR << 6)
-	lda	cursor_view
-	ora	l
-	mvi	l, low (ADDR_CRT_PARAM)
-	mov	m, a
+	mvi	m, (CRT_LINE_OFFSET << 7) | (CRT_NON_TRANSP_ATTR << 6) | (01b << 4) | CRT_ZZZZ
 	inx	h			;  HL = адрес регистра команд CRT
 
 	;  001SSSBB - команда "начало воспроизведения"
@@ -705,14 +643,43 @@ init_video:
 	;             10 = 4
 	;             11 = 8
 	mvi	m, 00100000b | (CRT_BURST_SPACE_CODE << 2) | CRT_BURST_COUNT_CODE
-
-	call	wait_sync
+	mov	a, m			;  сброс регистра флагов
+	mov	a, m			;  чтение слова состояния
+	ani	20h			;  нужен флаг IR - запрос прерывания
+	jz	$-3			;  ждём установленного IR
 
 	lxi	h, ADDR_DMA + 8		;  адрес регистра режимов ПДП
 	mvi	m, 10000000b		;  запрет ПДП
-	jmp	init_dma
+	mvi	l, low (ADDR_DMA + 04h)	;  адрес регистра адреса канала 2 ПДП
+	mvi	m, low (SCREEN)		;  младший адрес памяти
+	mvi	m, high (SCREEN)	;  старший адрес памяти
+	inr	l			;  адрес регистра количества циклов ПДП канала 2
 
-	ds	2, 0FFh			;  pad
+	;  16 бит = RWCCCCCC CCCCCCCC
+	;  CCCCCC CCCCCCCC - количество циклов
+	;  RW = 00 - цикл проверки ПД
+	;  RW = 01 - цикл записи ПД
+	;  RW = 10 - цикл чтения ПД
+	;  RW = 11 - запрещенная комбинация
+	;  младший байт счётчика циклов (биты C7-C0)
+	mvi	m, low (SCR_ARRAY - 1)
+	;  старший байт счётчика циклов (биты C13-C8)
+	mvi	m, high (SCR_ARRAY - 1) | (01b << 6)
+	mvi	l, low (ADDR_DMA + 08h)	;  адрес регистра режимов ПДП
+
+	;  D7 [AL]  = 1 - автозагрузка
+	;  D6 [TCS] = 0 - КС-стоп
+	;  D5 [EW]  = 1 - удлиненная запись
+	;  D4 [RP]  = 0 - циклический сдвиг
+	;  D3 [EN3] = 0 - разрешение канала 3
+	;  D2 [EN2] = 1 - разрешение канала 2
+	;  D1 [EN1] = 0 - разрешение канала 1
+	;  D0 [EN0] = 0 - разрешение канала 0
+	mvi	m, 10100100b		;  установка режима
+
+	;  здесь начинаются циклы ПДП
+	pop	h
+	ret
 
 ;  ВВОД 16-БИТНОГО СЛОВА С МАГНИТОФОНА  ____________________________________________________________
 ;  Выход: BC - СЛОВO
@@ -845,17 +812,17 @@ tape_wr_hl:
 ;  Выход: A - прочитанный байт
 tape_rd_byte:
 	push	h
-	push	d
 	push	b
-	mov	b, a
+	push	d
+	mov	d, a
 tape_rd_byte_start:
 	mvi	a, 10000000b		;  запрет ПДП
 	sta	ADDR_DMA + 8		;  адрес регистра режимов ПДП
 	lxi	h, 0
-	mov	c, l			;  результат
 	dad	sp
 	lxi	sp, 0
-tape_rd_byte_loop:
+	shld	save_sp
+	mvi	c, 0			;  результат
 	lda	ADDR_KBD_PC
 	rrc
 	rrc
@@ -863,14 +830,15 @@ tape_rd_byte_loop:
 	rrc
 	ani	1
 	mov	e, a
+tape_rd_byte_loop:
 	pop	psw
 	mov	a, c
 	ani	7Fh
 	rlc
 	mov	c, a
-	mvi	d, 0			;  счетчик попыток чтения уровня
+	mvi	h, 0			;  счетчик попыток чтения уровня
 tape_rd_byte_wait:
-	dcr	d
+	dcr	h
 	jz	tape_rd_byte_error
 	pop	psw
 	lda	ADDR_KBD_PC
@@ -883,178 +851,130 @@ tape_rd_byte_wait:
 	jz	tape_rd_byte_wait
 	ora	c
 	mov	c, a
-	lda	tape_consts		;  счетчик задержки
-	dcr	b
+	dcr	d
+	lda	tape_consts
 	jnz	$+5
 	sui	18			;  коррекция константы
-	pop	d
-	dcr	a
-	jnz	$-2			;  цикл задержки
-	inr	b
+	mov	b, a			;  счетчик задержки
+	pop	psw
+	dcr	b
+	jnz	$-2
+	inr	d
+	lda	ADDR_KBD_PC
+	rrc
+	rrc
+	rrc
+	rrc
+	ani	1
+	mov	e, a
+	mov	a, d
+	ora	a
 	jp	tape_rd_byte_lbl3
 	mov	a, c
-	xri	TAPE_SYNC_BYTE
-	jz	tape_rd_byte_lbl2
-	inr	a
-	jnz	tape_rd_byte_loop
-	dcr	a
-tape_rd_byte_lbl2:
+	cpi	TAPE_SYNC_BYTE
+	jnz	tape_rd_byte_lbl1
+	xra	a
 	sta	tape_data_sign
-	mvi	b, 8 + 1
-tape_rd_byte_lbl3:
-	dcr	b
+	jmp	tape_rd_byte_lbl2
+tape_rd_byte_lbl1:
+	cpi	low (~TAPE_SYNC_BYTE)
 	jnz	tape_rd_byte_loop
+	mvi	a, 0FFh			;  инверсия входного сигнала
+	sta	tape_data_sign
+tape_rd_byte_lbl2:
+	mvi	d, 8 + 1
+tape_rd_byte_lbl3:
+	dcr	d
+	jnz	tape_rd_byte_loop
+	lxi	h, ADDR_DMA + 4		;  адрес регистра адреса канала 2 ПДП
+	mvi	m, low (SCREEN)		;  младший адрес памяти
+	mvi	m, high (SCREEN)	;  старший адрес памяти
+	inx	h			;  адрес регистра количества циклов ПДП канала 2
+	mvi	m, low (SCR_ARRAY - 1)
+	mvi	m, high (SCR_ARRAY - 1) | (01b << 6)
+	;  команда "начало воспроизведения"
+	mvi	a, 00100000b | (CRT_BURST_SPACE_CODE << 2) | CRT_BURST_COUNT_CODE
+	sta	ADDR_CRT_CTRL
+	mvi	a, 11100000b		;  команда "предустановка счётчиков"
+	sta	ADDR_CRT_CTRL
+	mvi	l, 08h			;  адрес регистра режимов ПДП
+	mvi	m, 10100100b		;  установка режима
+	lhld	save_sp
 	sphl
 	lda	tape_data_sign
 	xra	c
-	jmp	restore_video_and_ret
+	jmp	pop_dbh_and_ret
 
 tape_rd_byte_error:
+	lhld	save_sp
 	sphl
 	call	init_video
-	mov	a, b
+	mov	a, d
 	ora	a
 	jp	out_error_txt
 	call	check_ctrl_c
 	jmp	tape_rd_byte_start
 
-;  ИНИЦИАЛИЗАЦИЯ ДОПОЛНИТЕЛЬНЫХ ПАРАМЕТРОВ ДЛЯ РАДИО-86РК/Nova  ____________________________________
-init_monitor:
-	call	init_video
-	;  очистка рабочих ячеек МОНИТОРа
-	lxi	h, MONITOR_DATA
-	lxi	d, MONITOR_DATA_END - 1
-	mvi	c, 0
-	call	directive_F
-	;  регистр H уже имеет нужное значение
-	mvi	l, low (SCREEN - 1)
-	shld	SP_storage
-	;  порт PC на ввод, для чтения конфигурации
-	;  порт PC содержит конфигурацию компьютера:
-	;  PC0 = 0 - знакогенератор хранится в ROM
-	;  PC0 = 1 - знакогенератор хранится в RAM
-	;  PC2 = 0 - шрифт имеет ширину 6 пикселов
-	;  PC2 = 1 - шрифт имеет ширину 8 пикселов
-	lxi	h, ADDR_KBD_CTRL
-	mvi	m, 10001011b
-	inp	ADDR_KBD_PC
-	sta	config_rk
-	mvi	m, 10001010b
-	outp	ADDR_KBD_PC
-	;
-	lxi	h, MONITOR_BASE
-	shld	extended_directive_handler + 1
-	jmp	set_cursor_view
-
-;  ВЫБОР ЗНАКОГЕНЕРАТОРА  __________________________________________________________________________
-;  Вход:  A - номер знакогенератора
-;         A = 0 - стандартный з/г: только заглавные латинские и русские буквы
-;         A = 1 - графический з/г Апогея
-;         A = 2 - расширенный з/г: заглавные и строчные буквы обоих алфавитов
-set_charset:
-	;  PC0 = ROM_A11
-	;  PC1 = 0 => ROM_A10 = 1
-	;  PC1 = 1 => ROM_A10 = screen attr
-	;  A = 0: PC = 10b
-	;  A = 1: PC = 00b
-	;  A = 2: PC = 11b
-	cpi	3
-	rnc
-	xri	1			;  A = 1, 0, 3
-	push	psw
-	ani	1
-	ori	1 << 1
-	outp	ADDR_KBD_CTRL		;  PC1
-	pop	psw
-	rar
-	outp	ADDR_KBD_CTRL		;  PC0
-	ret
-
 ;  ЗАПИСЬ БАЙТА НА МАГНИТНУЮ ЛЕНТУ  ________________________________________________________________
 ;  Вход:  C - байт
 tape_wr_byte:
 	push	h
-	push	d
 	push	b
+	push	d
 	push	psw
 	mvi	a, 10000000b		;  запрет ПДП
-	outp	ADDR_DMA + 8		;  адрес регистра режимов ПДП
+	sta	ADDR_DMA + 8		;  адрес регистра режимов ПДП
 	lxi	h, 0
 	dad	sp
 	lxi	sp, 0
-	mvi	b, 8			;  счетчик бит
+	mvi	d, 8			;  счетчик бит
 tape_wr_byte_loop:
-	pop	d
+	pop	psw
 	mov	a, c
 	rlc
 	mov	c, a
-	xri	1
-	ani	1
-	outp	ADDR_KBD_CTRL		;  0-й бит порта C
+	mvi	a, 1
+	xra	c
+	sta	ADDR_KBD_PC
 	lda	tape_consts + 1
-	pop	d
-	dcr	a
-	jnz	$-2
-	mov	a, c			;  маска без инверсии
-	ani	1
-	outp	ADDR_KBD_CTRL		;  0-й бит порта C
-	lda	tape_consts + 1
+	mov	b, a
+	pop	psw
 	dcr	b
+	jnz	$-2
+	mvi	a, 0			;  маска без инверсии
+	xra	c
+	sta	ADDR_KBD_PC
+	dcr	d
+	lda	tape_consts + 1
 	jnz	$+5
-	;  коррекция константы для последнего бита. значение на единицу меньше
-	;  авторского варианта потому как далее выполняется код без двух инструкций
-	sui	13
-	pop	d
-	dcr	a
-	jnz	$-2
-	inr	b
+	sui	14			;  коррекция константы
+	mov	b, a
+	pop	psw
 	dcr	b
+	jnz	$-2
+	inr	d
+	dcr	d
 	jnz	tape_wr_byte_loop
 	sphl
-	;  опыты показали, что видео восстанавливается и без
-	;  команды "начало воспроизведения"
-	mvi	a, 11100000b		;  команда "предустановка счётчиков"
-	outp	ADDR_CRT_CTRL
-	pop	psw
-
-restore_video_and_ret:
-	pop	b
-	pop	d
-
-init_dma:
 	lxi	h, ADDR_DMA + 4		;  адрес регистра адреса канала 2 ПДП
 	mvi	m, low (SCREEN)		;  младший адрес памяти
 	mvi	m, high (SCREEN)	;  старший адрес памяти
 	inx	h			;  адрес регистра количества циклов ПДП канала 2
-	;  16 бит = RWCCCCCC CCCCCCCC
-	;  CCCCCC CCCCCCCC - количество циклов
-	;  RW = 00 - цикл проверки ПД
-	;  RW = 01 - цикл записи ПД
-	;  RW = 10 - цикл чтения ПД
-	;  RW = 11 - запрещенная комбинация
-	;  младший байт счётчика циклов (биты C7-C0)
 	mvi	m, low (SCR_ARRAY - 1)
-	;  старший байт счётчика циклов (биты C13-C8)
-	;  цикл записи, т.к. в РК ПДП включён шиворот-навыворот
 	mvi	m, high (SCR_ARRAY - 1) | (01b << 6)
-	mvi	l, low (ADDR_DMA + 08h)	;  адрес регистра режимов ПДП
-	;  D7 [AL]  = 1 - автозагрузка
-	;  D6 [TCS] = 0 - КС-стоп
-	;  D5 [EW]  = 1 - удлиненная запись
-	;  D4 [RP]  = 0 - циклический сдвиг
-	;  D3 [EN3] = 0 - разрешение канала 3
-	;  D2 [EN2] = 1 - разрешение канала 2
-	;  D1 [EN1] = 0 - разрешение канала 1
-	;  D0 [EN0] = 0 - разрешение канала 0
+	;  команда "начало воспроизведения"
+	mvi	a, 00100000b | (CRT_BURST_SPACE_CODE << 2) | CRT_BURST_COUNT_CODE
+	sta	ADDR_CRT_CTRL
+	mvi	a, 11100000b		;  команда "предустановка счётчиков"
+	sta	ADDR_CRT_CTRL
+	mvi	l, 08h			;  адрес регистра режимов ПДП
 	mvi	m, 10100100b		;  установка режима
-	;  здесь начинаются циклы ПДП
+	pop	psw
+pop_dbh_and_ret:
+	pop	d
+	pop	b
 	pop	h
 	ret
-
-out_title:
-	lxi	h, title_str
-	call	out_str
-	jmp	init_video
 
 ;  ВЫВОД БАЙТА В HEX-КОДЕ  _________________________________________________________________________
 ;  Вход:  A - байт
@@ -1092,34 +1012,33 @@ out_char_c:
 	lhld	cursor_addr
 	lda	out_char_esc_phase
 	dcr	a
-	jm	out_char_no_esc
-	jz	out_char_esc1
-	jpo	out_char_esc2
+	jm	out_char_no_esc			;  out_char_esc_phase == 0
+	jz	out_char_esc1			;  out_char_esc_phase == 1
+	dcr	a
+	jz	out_char_esc2			;  out_char_esc_phase == 2
+	;  out_char_esc_phase == 4
 	;  обработка 3-го байта в ESC последовательности
 	;  передается смещение курсора по горизонтали X + 20h					
 	mov	a, c
 	sui	20h
-	mov	c, a
 out_char_esc3_loop:	
-	dcr	c
+	dcr	a
 	jm	out_char_reset_and_exit
-	push	b
+	push	psw
 	call	out_char_code_right
-	pop	b
+	pop	psw
 	jmp	out_char_esc3_loop
+
 out_char_reset_and_exit:
 	xra	a
 out_char_exit:
 	sta	out_char_esc_phase
 	ret
 
-	ds	3, 0FFh		;  pad
-
 out_char_no_esc:
 	mov	a, c
-;	ani	7Fh		;  фильтр 7-го бита больше не используется, это
-;	mov	c, a		;  сделано для того, чтобы можно было передавать
-				;  коды цвета и переключать знакогенераторы
+	ani	7Fh			;  только 7 бит в символе
+	mov	c, a
 	cpi	CHAR_CODE_CLS
 	jz	out_char_code_cls
 	cpi	CHAR_CODE_FF
@@ -1179,7 +1098,8 @@ out_char_code_lf:
 	lxi	h, SCREEN_VIDEO
 	lxi	d, SCREEN_VIDEO + SCR_SIZE_X
 	lxi	b, SCR_SIZE_X * SCR_VIDEO_SIZE_Y
-out_char_code_scroll:
+
+out_char_code_scroll_loop:
 	ldax	d
 	mov	m, a
 	inx	h
@@ -1187,7 +1107,7 @@ out_char_code_scroll:
 	dcx	b
 	mov	a, c
 	ora	b
-	jnz	out_char_code_scroll
+	jnz	out_char_code_scroll_loop
 	pop	d
 	pop	h
 	ret
@@ -1309,182 +1229,6 @@ out_char_code_cr:
 	dad	b
 	ret
 
-	.if $ - 0FE01h
-	.error FE01
-	.endif
-
-.if CFG_ELEKTRONIKA_KR02
-
-;  ОПРОС СОСТОЯНИЯ КЛАВИАТУРЫ  _____________________________________________________________________
-;  Выход: A = 00 - не нажата
-;         A = FF - нажата
-kbd_state:
-	LDA	kbd_key_pressed
-	ORA	A
-	RNZ
-	PUSH	H
-	LHLD	kbd_key_status
-	CALL	in_key
-	CMP	L
-	MOV	L, A
-	JZ	LBL77
-	MVI	A, 1
-	STA	kbd_key_released
-	MVI	H, 25H
-LBL75:	XRA	A
-LBL76:	SHLD	kbd_key_status
-	POP	H
-	STA	kbd_key_pressed
-	RET
-LBL77:	DCR	H
-	JNZ	LBL75
-	INR	A
-	JZ	LBL76
-	PUSH	B
-	LXI	B, 5003H
-	CALL	out_char_bell
-	POP	B
-	LDA	kbd_key_released
-	INR	A
-	MVI	H, 00H
-	JNZ	LBL78
-	MVI	H, 60H
-LBL78:	MVI	A, 0FFH
-	STA	kbd_key_released
-	JMP	LBL76
-LBL79:	JP	LBL90
-	LXI	H,kbd_rus
-	MOV	E, M
-	INR	L
-	MOV	D, M
-	CPI	40H
-	JC	LBL80
-	XRA	E
-	JMP	LBL81
-LBL80:	CPI	21H
-	JC	LBL81
-	XRA	D
-LBL81:	POP	D
-	POP	B
-	POP	H
-	RET
-	DB	0FFH, 0FFH
-
-;  ВВОД СИМВОЛА С КЛАВИАТУРЫ  ______________________________________________________________________
-;  Выход: A - введенный код
-in_char:
-	call	kbd_state
-	ora	a
-	jz	in_char
-	xra	a
-	sta	kbd_key_pressed
-	lda	kbd_key_status
-	ret
-
-;  ВВОД КОДА НАЖАТОЙ КЛАВИШИ  ______________________________________________________________________
-;  Выход: A = FF - не нажата
-;         A = FE - РУС/ЛАТ
-;         A - код клавиши
-in_key:
-	LDA	kbd_rus
-	ADI	0FFh
-	MVI	A, 3 << 1
-	ACI	0
-	STA	ADDR_KBD_CTRL
-	PUSH	H
-	LXI	H, 0701H
-LBL83:	MOV	A, L
-	RRC
-	MOV	L, A
-	CMA
-	STA	ADDR_KBD_PA
-	LDA	ADDR_KBD_PB
-	CMA
-	ORA	A
-	JNZ	LBL84
-	DCR	H
-	JP	LBL83
-	MVI	A, 0FFH
-	POP	H
-	RET
-REF4:	DB	00H, 20H, 00H, 40H	; ". .@"
-	DB	00H, 10H, 0FFH, 00H	; "...."
-	DB	9DH, 00H, 00H, 85H	; "...."
-	DB	0A7H, 0A8H, 0A9H, 1BH	; "...."
-	DB	09H, 83H, 81H, 80H	; "...."
-	DB	0A0H, 9EH, 9CH, 3BH	; "...;"
-	DB	4AH, 46H, 51H, 84H	; "JFQ."
-	DB	0A1H, 0A2H, 0A3H, 00H	; "...."
-	DB	31H, 43H, 59H, 5EH	; "1CY^"
-	DB	0A4H, 0A5H, 0A6H, 01H	; "...."
-	DB	32H, 55H, 57H, 53H	; "2UWS"
-	DB	9BH, 0CH, 1FH, 02H	; "...."
-	DB	33H, 4BH, 41H, 4DH	; "3KAM"
-	DB	7FH, 00H, 0AH, 34H	; "\7F..4"
-	DB	45H, 50H, 49H, 20H	; "EPI "
-	DB	18H, 0DH, 3AH, 03H	; "..:."
-	DB	35H, 4EH, 52H, 54H	; "5NRT"
-	DB	1AH, 19H, 2FH, 04H	; "../."
-	DB	36H, 47H, 4FH, 58H	; "6GOX"
-	DB	2EH, 20H, 2DH, 37H	; ". -7"
-	DB	5BH, 4CH, 42H, 08H	; "[LB."
-	DB	5CH, 48H, 30H, 38H	; "\H08"
-	DB	5DH, 44H, 40H, 2CH	; "]D@,"
-	DB	56H, 5AH, 39H		; "VZ9"
-LBL84:	PUSH	B
-	PUSH	D
-	LXI	D, 0302H
-	MVI	L, 8
-LBL85:	CMP	D
-	JZ	LBL87
-	INR	D
-	INR	D
-	INR	L
-	DCR	E
-	JP	LBL85
-	MVI	L, 8
-LBL86:	DCR	L
-	RLC
-	JNC	LBL86
-LBL87:	LXI	B, REF4-1
-	MOV	A, C
-LBL88:	ADI	8
-	DCR	L
-	JP	LBL88
-	MOV	C, A
-	MOV	A, H
-	ADD	C
-	MOV	C, A
-	LDAX	B
-	CPI	7FH
-	JZ	LBL81
-	CPI	90H
-	JC	LBL89
-	SUI	70H
-	JMP	LBL81
-LBL89:	LXI	D, 0580H
-	LXI	H, REF4
-LBL90:	CMP	E
-	JNZ	LBL92
-	MOV	A, M
-	LXI	H, kbd_rus
-	MOV	C, A
-	MOV	A, D
-	CPI	2
-	JNC	LBL91
-	INR	L
-LBL91:	MOV	M, C
-	POP	D
-	POP	B
-	POP	H
-	JMP	in_key
-LBL92:	INR	E
-	INR	L
-	DCR	D
-	JMP	LBL79
-
-.else  ;  CFG_ELEKTRONIKA_KR02
-
 ;  ОПРОС СОСТОЯНИЯ КЛАВИАТУРЫ  _____________________________________________________________________
 ;  Выход: A = 00 - не нажата
 ;         A = FF - нажата
@@ -1537,7 +1281,7 @@ kbd_state_hold:
 kbd_state_halt:	
 	lda	ADDR_KBD_PC
 	ani	KBD_RUS_FLAG		;  состояние клавиши [РУС/ЛАТ]
-	jz	kbd_state_halt		;  пока клавиша [РУС/ЛАТ] удерживается
+	jz	kbd_state_halt
 	lda	kbd_rus
 	cma
 	sta	kbd_rus
@@ -1567,9 +1311,7 @@ in_key:
 in_key_check:
 	xra	a
 	sta	ADDR_KBD_PA
-	nop				;  sta	ADDR_KBD_PC
-	nop
-	nop
+	sta	ADDR_KBD_PC
 	lda	kbd_rus
 	ani	1
 	ori	3 << 1			;  3-й бит порта C
@@ -1706,8 +1448,6 @@ in_key_lbl5:
 	pop	h
 	ret
 
-.endif  ;  CFG_ELEKTRONIKA_KR02
-
 ;  ПЕРЕДАЧА АДРЕСА ВЕРХНЕЙ ГРАНИЦЫ СВОБОДНОЙ ПАМЯТИ  _______________________________________________
 ;  Выход: HL - адрес границы
 get_ram_top:
@@ -1803,14 +1543,10 @@ out_regs_lbl:
 	jnz	out_regs_loop
 	ret
 
-	db	"32"
-
-	.if $ - 10000h
-	.error code overflow
-	.endif
+	db	0FFh, 0FFh
 
 ;  =================================================================================================
-;  рабочие переменные МОНИТОРа в оперативной памяти
+;  рабочие переменные МОНИТОРА в оперативной памяти
 
 	org	MONITOR_DATA
 
@@ -1818,26 +1554,18 @@ cursor_addr:				;  текущее значение адреса курсора [out_char]
 	ds	2
 cursor_pos:				;  текущее положение курсора [out_char]
 	ds	2
-out_char_esc_phase:			;  [out_char]
+out_char_esc_phase:
 	ds	1
-kbd_key_pressed:			;  [kbd_state] [in_char]
+kbd_key_pressed:
 	ds	1
-kbd_rus:				;  флаг русской раскладки клавиатуры [in_key] [kbd_state]
-	ds	1
-config_rk:				;  биты конфигурации, выставленные джамперами
-	ds	1
-cursor_view:				;  вид курсора (видеоблок/подчеркивание) [init_video]
-	ds	1			;  допустимые значения: 00h, 10h, 20h, 30h
+kbd_rus:				;  флаг русской раскладки клавиатуры [in_key]
+	ds	3
 kbd_key_status:				;  код клавиши и переменная задержки [kbd_state]
 	ds	2
-kbd_key_released:			;  [kbd_state]
+kbd_key_released:
 	ds	2
 save_sp:				;  переменная для временного хранения
-	ds	2
-extended_directive_handler:
-	ds	1			;  0C3h = jmp
-	ds	2			;  адрес обработчика
-	ds	2			;  не используется
+	ds	7
 PC_storage:
 	ds	2
 HL_storage:
