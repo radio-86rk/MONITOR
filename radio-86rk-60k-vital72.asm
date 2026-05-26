@@ -145,7 +145,7 @@ RTC_CE_T_1MINUTE	EQU	2 << 2		;  period 1 minute
 RTC_CE_T_1HOUR		EQU	3 << 2		;  period 1 hour
 
 RTC_CE_ITRPT_STND	EQU	1 << 1
-RTC_CE_MASK		EQU	1 << 0		;  STD.P staut control
+RTC_CE_MASK		EQU	1 << 0		;  STD.P output control
 
 ;  управл€ющий регистр F
 RTC_CF_TEST		EQU	1 << 3
@@ -1683,8 +1683,8 @@ set_charset:
 	;  A = 2: PC = 11b
 	cpi	3
 	jnc	set_charset_koi
-	xri	1		;  A = 1, 0, 3
 	push	psw
+	inr	a		;  A = 1, 2, 3
 	ani	1
 	ori	1 << 1
 	sta	ADDR_KBD_CTRL	;  PC1
